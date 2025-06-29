@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Генератор расписания</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .entity-section {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .schedule-day {
+            margin-bottom: 2rem;
+        }
+        .schedule-entry {
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            border: 1px solid #eee;
+            border-radius: 3px;
+            background-color: #f8f9fa;
+        }
+        .conflict {
+            background-color: #ffdddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="mb-4">Генератор расписания занятий</h1>
+
+        <div class="row">
+            <!-- Левая колонка - управление данными -->
+            <div class="col-md-4">
+                <!-- Преподаватели -->
+                <div class="entity-section">
+                    <h3>Преподаватели</h3>
+                    <div class="mb-3">
+                        <input type="text" id="teacherName" class="form-control" placeholder="Имя преподавателя">
+                        <button class="btn btn-primary mt-2" onclick="addTeacher()">Добавить</button>
+                    </div>
+                    <ul id="teacherList" class="list-group">
+                        <!-- Список преподавателей будет здесь -->
+                    </ul>
+                </div>
+
+                <!-- Аудитории -->
+                <div class="entity-section">
+                    <h3>Аудитории</h3>
+                    <div class="mb-3">
+                        <input type="text" id="classroomName" class="form-control" placeholder="Название аудитории">
+                        <button class="btn btn-primary mt-2" onclick="addClassroom()">Добавить</button>
+                    </div>
+                    <ul id="classroomList" class="list-group">
+                        <!-- Список аудиторий будет здесь -->
+                    </ul>
+                </div>
+
+                <!-- Группы -->
+                <div class="entity-section">
+                    <h3>Группы</h3>
+                    <div class="mb-3">
+                        <input type="text" id="groupName" class="form-control" placeholder="Название группы">
+                        <button class="btn btn-primary mt-2" onclick="addGroup()">Добавить</button>
+                    </div>
+                    <ul id="groupList" class="list-group">
+                        <!-- Список групп будет здесь -->
+                    </ul>
+                </div>
+
+                <!-- Занятия -->
+                <div class="entity-section">
+                    <h3>Занятия</h3>
+                    <div class="mb-3">
+                        <input type="text" id="subjectName" class="form-control mb-2" placeholder="Название занятия">
+                        <select id="subjectTeacher" class="form-select mb-2">
+                            <option value="">Выберите преподавателя</option>
+                        </select>
+                        <select id="subjectClassroom" class="form-select mb-2">
+                            <option value="">Выберите аудиторию</option>
+                        </select>
+                        <select id="subjectGroups" class="form-select mb-2" multiple>
+                            <option value="">Выберите группы</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="addSubject()">Добавить занятие</button>
+                    </div>
+                    <ul id="subjectList" class="list-group">
+                        <!-- Список занятий будет здесь -->
+                    </ul>
+                </div>
+
+                <!-- Ограничения -->
+                <div class="entity-section">
+                    <h3>Ограничения</h3>
+                    <div class="mb-3">
+                        <h5>Недоступность преподавателя</h5>
+                        <select id="unavailableTeacher" class="form-select mb-2">
+                            <option value="">Выберите преподавателя</option>
+                        </select>
+                        <select id="unavailableDay" class="form-select mb-2">
+                            <option value="Monday">Понедельник</option>
+                            <option value="Tuesday">Вторник</option>
+                            <option value="Wednesday">Среда</option>
+                            <option value="Thursday">Четверг</option>
+                            <option value="Friday">Пятница</option>
+                        </select>
+                        <button class="btn btn-warning" onclick="addTeacherUnavailable()">Добавить ограничение</button>
+                    </div>
+                    <ul id="constraintList" class="list-group">
+                        <!-- Список ограничений будет здесь -->
+                    </ul>
+                </div>
+
+                <button class="btn btn-success btn-lg w-100 mt-3" onclick="generateSchedule()">Сгенерировать расписание</button>
+                <button class="btn btn-info btn-lg w-100 mt-2" onclick="checkSchedule()">Проверить конфликты</button>
+            </div>
+
+            <!-- Правая колонка - расписание -->
+            <div class="col-md-8">
+                <h2>Расписание</h2>
+                <div id="scheduleContainer">
+                    <!-- Расписание будет здесь -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // загрузка данных при старте
+        document.addEventListener('DOMContentLoaded', function() {
+            loadData();
+        });
+
+        //функции для работы с API
+        async function fetchData(url, method = 'GET', data = null) {
+            const options = {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            };
+
+            if (data) {
+                options.body = JSON.stringify(data);
+            }
+
+            const response = await fetch(url, options);
+            return await response.json();
+        }
+
+        async function loadData() {
+            const teachers = await fetchData('/api/teachers');
+            renderEntityList('teacherList', teachers, 'Преподаватель');
+            populateSelect('subjectTeacher', teachers, 'name');
+            populateSelect('unavailableTeacher', teachers, 'name');
+
+            const classrooms = await fetchData('/api/classrooms');
+            renderEntityList('classroomList', classrooms, 'Аудитория');
+            populateSelect('subjectClassroom', classrooms, 'name');
+
+            const groups = await fetchData('/api/groups');
+            renderEntityList('groupList', groups, 'Группа');
+            populateSelect('subjectGroups', groups, 'name', true);
+
+            const subjects = await fetchData('/api/subjects');
+            renderSubjectList(subjects);
+
+            const constraints = await fetchData('/api/constraints/teacher_unavailable');
+            renderConstraintList(constraints);
+
+            const schedule = await fetchData('/api/schedule');
+            renderSchedule(schedule);
+        }
+
+        // отображение списка сущностей
+        function renderEntityList(elementId, entities, entityType) {
+            const listElement = document.getElementById(elementId);
+            listElement.innerHTML = '';
+
+            entities.forEach(entity => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                li.innerHTML = `
+                    ${entity.name} (ID: ${entity.id})
+                    <button class="btn btn-sm btn-danger" onclick="deleteEntity('${entityType.toLowerCase()}', ${entity.id})">Удалить</button>
+                `;
+                listElement.appendChild(li);
+            });
+        }
+
+        // отображение списка занятий
+        function renderSubjectList(subjects) {
+            const listElement = document.getElementById('subjectList');
+            listElement.innerHTML = '';
+
+            subjects.forEach(subject => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item';
+                li.innerHTML = `
+                    <strong>${subject.name}</strong><br>
+                    Преподаватель: ${subject.teacher_id ? 'ID ' + subject.teacher_id : 'Не указан'}<br>
+                    Аудитория: ${subject.classroom_id ? 'ID ' + subject.classroom_id : 'Не указана'}<br>
+                    Группы: ${subject.group_ids ? subject.group_ids.join(', ') : 'Не указаны'}
+                    <button class="btn btn-sm btn-danger mt-1" onclick="deleteEntity('subjects', ${subject.id})">Удалить</button>
+                `;
+                listElement.appendChild(li);
+            });
+        }
+
+        // отображение списка ограничений
+        function renderConstraintList(constraints) {
+            const listElement = document.getElementById('constraintList');
+            listElement.innerHTML = '';
+
+            constraints.forEach(constraint => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item';
+                li.innerHTML = `
+                    Преподаватель ID ${constraint.teacher_id} недоступен в ${constraint.day}
+                    <button class="btn btn-sm btn-danger mt-1" onclick="deleteConstraint(${constraint.teacher_id}, '${constraint.day}')">Удалить</button>
+                `;
+                listElement.appendChild(li);
+            });
+        }
+
+        // отображение расписания
+        function renderSchedule(schedule) {
+            const container = document.getElementById('scheduleContainer');
+            container.innerHTML = '';
+
+            if (!schedule || Object.keys(schedule).length === 0) {
+                container.innerHTML = '<div class="alert alert-info">Расписание не сгенерировано</div>';
+                return;
+            }
+
+            for (const day in schedule) {
+                const dayDiv = document.createElement('div');
+                dayDiv.className = 'schedule-day card mb-3';
+                dayDiv.innerHTML = `
+                    <div class="card-header">
+                        <h3>${day}</h3>
+                    </div>
+                    <div class="card-body" id="schedule-${day}"></div>
+                `;
+
+                container.appendChild(dayDiv);
+
+                const dayEntries = schedule[day];
+                const dayBody = document.getElementById(`schedule-${day}`);
+
+                dayEntries.forEach((entry, index) => {
+                    const entryDiv = document.createElement('div');
+                    entryDiv.className = 'schedule-entry';
+                    entryDiv.innerHTML = `
+                        <strong>${entry.start} - ${entry.end}</strong><br>
+                        <strong>${entry.subject_name}</strong><br>
+                        Преподаватель: ${entry.teacher_name}<br>
+                        Аудитория: ${entry.classroom_name}<br>
+                        Группы: ${entry.group_names.join(', ')}
+                        <button class="btn btn-sm btn-warning mt-1" onclick="showMoveDialog('${day}', ${index}, ${entry.time_slot_id})">Перенести</button>
+                    `;
+                    dayBody.appendChild(entryDiv);
+                });
+            }
+        }
+
+        // заполнение выпадающего списка
+        function populateSelect(selectId, data, nameField, multiple = false) {
+            const select = document.getElementById(selectId);
+            select.innerHTML = '';
+
+            if (multiple) {
+                select.multiple = true;
+            }
+
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = multiple ? 'Выберите группы' : `Выберите ${selectId.replace('subject', '').toLowerCase()}`;
+            select.appendChild(defaultOption);
+
+            data.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.id;
+                option.textContent = item[nameField];
+                select.appendChild(option);
+            });
+        }
+
+        // добавление преподавателя
+        async function addTeacher() {
+            const name = document.getElementById('teacherName').value.trim();
+            if (!name) return;
+
+            const newTeacher = await fetchData('/api/teachers', 'POST', { name });
+            if (newTeacher) {
+                document.getElementById('teacherName').value = '';
+                loadData();
+            }
+        }
+
+        // добавление аудитории
+        async function addClassroom() {
+            const name = document.getElementById('classroomName').value.trim();
+            if (!name) return;
+
+            const newClassroom = await fetchData('/api/classrooms', 'POST', { name });
+            if (newClassroom) {
+                document.getElementById('classroomName').value = '';
+                loadData();
+            }
+        }
+
+        // добавление группы
+        async function addGroup() {
+            const name = document.getElementById('groupName').value.trim();
+            if (!name) return;
+
+            const newGroup = await fetchData('/api/groups', 'POST', { name });
+            if (newGroup) {
+                document.getElementById('groupName').value = '';
+                loadData();
+            }
+        }
+
+        // добавление занятия
+        async function addSubject() {
+            const name = document.getElementById('subjectName').value.trim();
+            const teacherId = parseInt(document.getElementById('subjectTeacher').value);
+            const classroomId = parseInt(document.getElementById('subjectClassroom').value);
+            const groupSelect = document.getElementById('subjectGroups');
+            const groupIds = Array.from(groupSelect.selectedOptions).map(opt => parseInt(opt.value));
+
+            if (!name || groupIds.length === 0) return;
+
+            const newSubject = {
+                name,
+                teacher_id: teacherId || null,
+                classroom_id: classroomId || null,
+                group_ids: groupIds
+            };
+
+            const result = await fetchData('/api/subjects', 'POST', newSubject);
+            if (result) {
+                document.getElementById('subjectName').value = '';
+                document.getElementById('subjectTeacher').value = '';
+                document.getElementById('subjectClassroom').value = '';
+                groupSelect.querySelectorAll('option').forEach(opt => opt.selected = false);
+                loadData();
+            }
+        }
+
+        // добавление ограничения
+        async function addTeacherUnavailable() {
+            const teacherId = parseInt(document.getElementById('unavailableTeacher').value);
+            const day = document.getElementById('unavailableDay').value;
+
+            if (!teacherId) return;
+
+            const constraint = {
+                teacher_id: teacherId,
+                day: day
+            };
+
+            const result = await fetchData('/api/constraints/teacher_unavailable', 'POST', constraint);
+            if (result) {
+                loadData();
+            }
+        }
+
+        // удаление сущности
+        async function deleteEntity(entityType, entityId) {
+            if (confirm(`Удалить ${entityType} с ID ${entityId}?`)) {
+                await fetchData(`/api/${entityType}/${entityId}`, 'DELETE');
+                loadData();
+            }
+        }
+
+        async function deleteConstraint(teacherId, day) {
+            if (confirm(`Удалить ограничение для преподавателя ${teacherId} в ${day}?`)) {
+                const constraints = await fetchData('/api/constraints/teacher_unavailable');
+                const index = constraints.findIndex(c => c.teacher_id === teacherId && c.day === day);
+
+                if (index !== -1) {
+                    constraints.splice(index, 1);
+                    // Здесь нужно реализовать удаление на сервере (в реальном приложении)
+                    // Для демо просто перезагрузим данные
+                    loadData();
+                }
+            }
+        }
+
+        // генерация расписания
+        async function generateSchedule() {
+            const schedule = await fetchData('/api/schedule/generate', 'POST');
+            if (schedule.error) {
+                alert(`Ошибка: ${schedule.error}`);
+            } else {
+                renderSchedule(schedule);
+            }
+        }
+
+        // проверка на кконфликт
+        async function checkSchedule() {
+            const conflicts = await fetchData('/api/schedule/check');
+
+            if (conflicts.length === 0) {
+                alert('Конфликтов не обнаружено');
+            } else {
+                alert(`Найдено ${conflicts.length} конфликтов. Смотрите консоль для деталей.`);
+                console.log('Конфликты:', conflicts);
+            }
+        }
+
+        async function showMoveDialog(day, entryIndex, currentSlotId) {
+            const timeSlots = await fetchData('/api/time_slots');
+            const availableSlots = timeSlots.filter(slot => slot.day === day && slot.id !== currentSlotId);
+
+            let slotOptions = availableSlots.map(slot =>
+                `<option value="${slot.id}">${slot.start} - ${slot.end}</option>`
+            ).join('');
+
+            const dialogHtml = `
+                <div class="modal fade" id="moveDialog" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Перенести занятие</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <select id="newSlotSelect" class="form-select">
+                                    ${slotOptions}
+                                </select>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                                <button type="button" class="btn btn-primary" onclick="moveEntry('${day}', ${entryIndex}, ${currentSlotId})">Перенести</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const dialogContainer = document.createElement('div');
+            dialogContainer.innerHTML = dialogHtml;
+            document.body.appendChild(dialogContainer);
+
+            const modal = new bootstrap.Modal(document.getElementById('moveDialog'));
+            modal.show();
+
+            document.getElementById('moveDialog').addEventListener('hidden.bs.modal', function() {
+                dialogContainer.remove();
+            });
+        }
+
+        // перенос занятия
+        async function moveEntry(day, entryIndex, currentSlotId) {
+            const newSlotId = parseInt(document.getElementById('newSlotSelect').value);
+
+            const result = await fetchData('/api/schedule/update', 'POST', {
+                day,
+                entry_index: entryIndex,
+                new_slot_id: newSlotId
+            });
+
+            if (result.success) {
+                // закрываем диалог и обновляем расписание
+                bootstrap.Modal.getInstance(document.getElementById('moveDialog')).hide();
+                loadData();
+            } else {
+                alert(`Ошибка: ${result.error}`);
+            }
+        }
+    </script>
+</body>
+</html>
